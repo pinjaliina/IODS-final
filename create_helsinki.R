@@ -57,7 +57,7 @@ ha_main <- dplyr::select(ha_main, ha_main_cols_to_keep)
 ha_pop <- dplyr::select(ha_pop, c(1,21:31))
 # From the 2015 national election data, keep the support share of only two of the parties:
 # – Greens (VIHR): a value-liberal, slightly left-leaning pro-urbanisation party.
-# – True Finns (PS): a populist and value-conservative racism-flirting right wing party.
+# – Finns (PS): a populist and value-conservative racism-flirting right wing party.
 ha_elections <- dplyr::select(ha_elections, one_of(c('Alue', 'VIHR', 'PS')))
 
 # Glimpse the data again.
@@ -132,6 +132,15 @@ helsinki <- helsinki[ ! helsinki$dist_id %in% c(1,2,3,4,5,6,7), ]
 rownames(helsinki) <- paste(helsinki$dist_id, helsinki$dist_name)
 helsinki <- helsinki[,-20]
 helsinki <- helsinki[,-1]
+
+# Round some of the data
+helsinki['health_cap'] <- round(helsinki$health_cap, digits = 1)
+helsinki['inc_supp'] <- round(helsinki$inc_supp, digits = 1)
+helsinki['child_prot'] <- round(helsinki$child_prot, digits = 1)
+helsinki['unemp_rate'] <- round(helsinki$unemp_rate, digits = 1)
+helsinki['carless'] <- round(helsinki$carless, digits = 1)
+helsinki['VIHR'] <- round(helsinki$VIHR, digits = 1)
+helsinki['PS'] <- round(helsinki$PS, digits = 1)
 
 # Explore the final data once more.
 glimpse(helsinki)
