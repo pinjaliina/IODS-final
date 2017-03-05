@@ -1,0 +1,217 @@
+---
+title: "Education in Helsinki: The Final Assignment of the Introduction to Open Data Science"
+author: "Pinja-Liina Jalkanen [pinja-liina.jalkanen@helsinki.fi](mailto:pinja-liina.jalkanen@helsinki.fi)"
+date: "`r format(Sys.time(), '%e %B %Y')`"
+output:
+  html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    fig_caption: true
+    fig_width: 10
+    fig_height: 10
+    code_folding: show
+---
+
+```{r setup, echo=FALSE, message=FALSE}
+# Clear memory.
+rm(list = ls())
+
+# Define packages required by this script.
+library(dplyr)
+library(GGally)
+library(ggplot2)
+library(tidyverse)
+library(corrplot)
+library(visreg)
+
+# This affects wrappings of the output of summary().
+options(width = 70)
+```
+
+# Acknowledgements
+
+Because this work takes the form of a mini-thesis, where even a separate abstract was requested, I decided to also include some acknowledgements. Thus, I want to dedicate this work to the course lecturer and my cousin Kimmo, who has since the last autumn somehow tolerated my seemingly endless frustration with statistics and early mornings. Thank you for an interesting course!
+
+# Abstract
+
+In this work, I've investigated how well it is possible to explain the regional differences in the share of the population with at least secondary education using other socioeconomic factors. The research area was the City of Helsinki and the data had been collected by the city; the year of the data was 2015. I performed a Principal Component Analysis (PCA) on the data to reduce its dimensionality, and based on manual investigation of the data and the results of the PCA created a Linear Model (LM) that aims to explain the secondary or higher education ratio.
+
+The results show quite clearly and rather surprisingly that the factor most clearly explaining the secondary education ratio is the rate of support for the Finns party in the national elections, even though unemployment rate, dependency on income support and population density also play a part; the Finns party support rate alone explains over 80% of the regional variability of the secondary or higher education rate.
+
+# About the Data
+
+## Introduction
+
+My purpose is to investigate how well the regional differences in the share of the population with at least secondary education are explainable with other socioeconomic factors. To do that, I have utilised [Helsinki Region Infoshare](http://www.hri.fi/) and downloaded a [dataset that includes various district-level statistics of the City of Helsinki](http://www.hri.fi/fi/dataset/helsinki-alueittain-2015). The data is maintained by the (City of Helsinki Urban Facts Centre)[http://www.hel.fi/www/tieke/en] and was downloaded on 04/03/17. It is shared with the [Creative Commons Attribution 4.0 International licence](https://creativecommons.org/licenses/by/4.0/deed). The data is further explained by the Urban Facts Centre in [this document](http://www.hel.fi/hel2/tietokeskus/julkaisut/pdf/16_05_27_Helsinki_alueittain_2015_Tikkanen.pdf), but the document is mostly in Finnish.
+
+While I assume that the target variable – the share of the population with at least secondary education – is explainable by the other factors, the dataset doesn't directly include this factor, and it includes a very large amount of other factors, most of which are most likely not relevant in explaining the target variable. Thus, I've created a [separate R script](https://github.com/pinjaliina/IODS-final/blob/master/create_helsinki.R) to tidy up the data, create some new derived variables and join distinct parts of it together. The source code of that script is viewable at the following address: https://github.com/pinjaliina/IODS-final/blob/master/create_helsinki.R.
+
+The script creates a more usable dataset that can be read in as follows:
+```{r read in data}
+helsinki <- as.data.frame(read.table('helsinki.csv', sep = '\t', header = TRUE))
+```
+
+## Exploring the Data
+
+The structure and dimensions of the data can be shown as follows:
+```{r glimpse the data}
+glimpse(helsinki)
+```
+
+As seen above, the data includes 31 observations of 21 variables. If we take a look of the names of the single observations, we see that they match with the names of the city districts:
+```{r list rownames}
+rownames(helsinki)
+```
+
+We can also see that the district number 801, the Östersundom district (Östersundomin peruspiiri) is missing. This is because the area of that district was only joined to the city on 2009, and there was no population data available before that year.
+
+The shortened variable names in the data can be more thoroughly explained as follows:
+
+<!-- RMarkdown getting too smart with variable names ending with “cap”… -->
+* **fin_spk:** Finnish speakers, %
+* **swe_spk:** Swedish speakers, %
+* **oth_spk:** Foreign language speakers, %
+* **foreign:** Foreigners, %
+* **foreign_bkg:** Non-foreigners with foreign background, %
+* **hki_born:** Born in Helsinki, %
+* **pop_dens:** Inhabitants per sq km
+* **emp_dens:** Employee density per sq km
+* <span style="font-weight: bold">inc_cap:</span> Mean income per capita
+* <span style="font-weight: bold">sq_m_cap:</span> Mean living space in sq m per capita
+* <span style="font-weight: bold">health_cap:</span> Mean amount of public healthcare visits per capita.
+* **inc_supp:** Receivers of income support, %
+* **child_prot:** Child protection cases, % of pop.
+* **unemp_rate:** Unemployment rate
+* **emp_rate:** Employment rate
+* **carless:** Households without a car, %
+* **edu_sec:** Population with at least secondary education, %
+* **dw_rent:** Ratio of rental dwellings (out of all dwellings)
+* **pop_growth:** Average yearly population growth rate from 2005 to 2015
+* **VIHR:** Support of the Greens party in national elections of 2015
+* **PS:** Support of the Finns party in national elections of 2015
+
+Note of the political parties: Greens (VIHR) is a value-liberal, slightly left-leaning pro-urbanisation party. Finns (PS) is a populist and value-conservative racism-flirting right wing party. To avoid choosing all of the parties, I chose two that are relative polar opposites (even if not on the traditional left–right scale.
+
+A graphical overview of the data and summaries of its variables can be displayed as follows:
+```{r data summary, cache=TRUE}
+ggpairs(helsinki, mapping = aes(), lower = list(combo = wrap("facethist", bins = 10)), upper = list(continuous = wrap("cor", size=3)))
+summary(helsinki)
+```
+
+As seen from the plot, most of the variables are quite skewed and not very close to normal distribution, even though there are some exceptions; statistically it is quite unsurprising that most of the exceptions involve variables generally including large amount of the total population, such as the ratio of Finnish speakers and the ratio of Helsinki natives. The summary further reveals that many of the variables have significant outliers – i.e. variables with then min or max values very far away from their interquartile range (e.g. Swedish speakers ratio, foreign population ratio, income support ratio, carless ratio). This somewhat hints toward potential segregation of the districts, though some of them, like population density, are probably better explained by other factors, and it would in any case be rather dangerous to jump hastily into conclusions without any further analysis.
+
+The above overview plot already shows that there are not just some clear linear dependencies but also some very significant correlations between the variables, even if some of them are quite self-explanatory such as the correlation between foreign language speakers ratio and the foreigners ratio, which is very close to one. However, due to the large amount of variables it is not very easy to find all the highest correlations from the above plot, so it is useful to plot separately the correlations alone:
+```{r correlation plot, cache=TRUE}
+cor_matrix <- round(cor(helsinki), digits = 2)
+corrplot(cor_matrix, method = "circle", type = "upper", tl.pos = "d", tl.cex = 0.8)
+```
+
+We can now see more clearly that there are some interesting very high correlations besides the very obvious ones, such as the foreign background related variables (foreigner rate, foreign background rate and other speakers rate) correlating highly with variables related to low income related variables (income per capita, income support rate and unemployment rate). Socially potentially quite alarming, high child protection rate also seems to relate with foreign background. However, it is interesting to note that the same low income related variables and high child protection rate are also related to high support of the Finns party. My chosen target variable, secondary or higher education ratio, also has a relative high negative correlation with the Finns party support, but on the other hand a high positive correlation with the Green party support. In addition, it correlates highly with the employment rate.
+
+# Analysis and Results
+
+## Reducing the Dimensionality
+
+While creating the dataset, I intentionally included quite large part of the variables included in the source data, as I was not really sure which of them would actually best explain the target variable. However, as the above exploration of the data has made clear, there is clearly too many variables explaining roughly the same dimensions of the data and thus too much dimensionality. To reduce it, I'm going to utilise a dimensionality reduction method called [Principal Component Analysis (PCA)](https://en.wikipedia.org/wiki/Principal_component_analysis). The purpose is to try and extract the most essential dimensions out of the data by transforming the data and use these principal components for further analysis of the data, in hope that the principal components explaining most of the total variance in the data characterise the whole dataset reasonably accurately. I'm going to perform it by using [Singular Value Decomposition (SVD)](https://en.wikipedia.org/wiki/Singular_value_decomposition) as the matrix decomposition method.
+
+To perform the PCA, the data needs to be standardised, i.e. all of the variables must be fit to normal distribution so that the mean of every variable is zero. This is because PCA is sensitive to the relative scaling of the original features and assumes that features with larger variance are more important than features with smaller variance. Thus, all of the variables need to be reasonably close to the normal distribution, and as this isn't the case with our dataset, the standardisation is essential.
+
+The standardisation as well as the actual PCA and summarising and plotting the results can be executed as follows:
+```{r standardise and do PCA}
+helsinki_std <- as.data.frame(scale(helsinki)) # Standardise.
+pca_hki_std <- prcomp(helsinki_std) # Perform the PCA.
+s_pca_hki_std <- summary(pca_hki_std) # Summarise the results.
+s_pca_hki_std # Print summary.
+# Extract percentages of variance from the summary (for the plot titles).
+pr_shs <- round(100*s_pca_hki_std$importance[2, ], digits = 1)
+pc_shs_lab <- paste0(names(pr_shs), " (", pr_shs, "%)") # Create plot axis titles.
+# Plot.
+biplot(pca_hki_std, choices = 1:2, cex = c(0.7, 0.8), col = c("grey40", "deeppink2"), xlab = pc_shs_lab[1], ylab = pc_shs_lab[2])
+```
+
+While the PCA does produce as many principal components as there are variables in the original data, we can see from the summary output that the first two of them explain over 70 % of the total variance in the data. Because the angle of the arrows in the plot indicate the correlation between the original features and the principal components and their length their proportion of the total variance, it is now more easy to reliably say which variables affect the features in which way, and which are more important than the others. From the plot, we can conclude that the variables correlating strongly with the first principal component are mostly related to wellbeing and background, and the variables correlating strongly with the second principal component are mostly related to urbanisation. The variables that correlate most strongly with both of the first two principal components are living space per capita and secondary or higher education ratio, our designated target variable.
+
+Armed with this information, the data can now be analysed further.
+
+## Fitting a Linear Model
+
+For an actual model explaining the chosen target variable, secondary or higher education ratio, a linear model (LM) is the most suitable. The results of the PCA can be utilised to choose those variables for the explanatory variables that explain most of the total variability in the data and that correlate most strongly with the target variable.
+
+Linear model themselves are simply statistical models that try to model a relationship between a target variable – in this case, the ratio of secondary or higher education – and one or more explanatory variables. Their most important assumption is linearity, but there are also other assumptions (more of which below).
+
+Initially, based on both the initial exploration of the variables and the results of the PCA, I've chosen the following explanatory variables for the model, in the order of the correlation between them and the target variable (most significant correlations first):
+
+* PS (cor: `r round(cor(helsinki$PS, helsinki$edu_sec), digits = 2)`)
+* emp_rate (cor: `r round(cor(helsinki$emp_rate, helsinki$edu_sec), digits = 2)`)
+* VIHR (cor: `r round(cor(helsinki$VIHR, helsinki$edu_sec), digits = 2)`)
+* unemp_rate (cor: `r round(cor(helsinki$unemp_rate, helsinki$edu_sec), digits = 2)`)
+* inc_cap (cor: `r round(cor(helsinki$inc_cap, helsinki$edu_sec), digits = 2)`)
+* oth_spk (cor: `r round(cor(helsinki$oth_spk, helsinki$edu_sec), digits = 2)`)
+* inc_supp (cor: `r round(cor(helsinki$inc_supp, helsinki$edu_sec), digits = 2)`)
+* pop_dens (cor: `r round(cor(helsinki$pop_dens, helsinki$edu_sec), digits = 2)`)
+* emp_dens (cor: `r round(cor(helsinki$emp_dens, helsinki$edu_sec), digits = 2)`)
+
+Fitting a model with abovementioned explanatory variables and printing its summary can be done as follows:
+```{r fit an LM}
+helsinki_lm <- lm(edu_sec ~ PS + emp_rate + VIHR + unemp_rate + inc_cap + oth_spk + inc_supp + pop_dens + emp_dens, data = helsinki)
+lm_summary <- summary(helsinki_lm)
+lm_summary
+```
+
+However, the results indicate clearly that most of the explanatory variables in the model are not statistically signifincant at all, as indicated by the relative high p-values, i.e. the probabilities that the respective regression coefficients for those variables would be zero. Thus, it is better to refit the model without them:
+```{r refit an LM}
+helsinki_lm <- lm(edu_sec ~ PS + unemp_rate + inc_supp + pop_dens, data = helsinki)
+lm_summary <- summary(helsinki_lm)
+lm_summary
+```
+
+We can now see that all the estimates of the regression coefficients now have statistically highly significant probabilities, even though the estimated coefficient of the population density is so small that its effect on the model is actually very tiny. The adjusted R<sup>2</sup> also remains very, very high at `r round(lm_summary$r.squared, digits = 3)`: it means that `r round(100*lm_summary$r.squared, digits = 1)`% of the variability of the target variable can be explained by the model.
+
+Note that it is important to understand that the high R<sup>2</sup> alone does not tell anything about the usefulness of the model; in fact, adding *any* new variable to the model increases the R<sup>2</sup> – and in many cases, the adjusted R<sup>2</sup> as well, even though in principle the latter is supposed to penalise for including any unnecessary variables!
+
+The individual explanatory variables of the model can be visualised as follows:
+```{r lm visualise}
+par(mfrow = c(2,2)) # Set some graphical params.
+visreg(helsinki_lm)
+```
+
+## Validating the Model
+
+In addition to linearity, linear models are usually fitted with the assumption that:
+
+1. The errors of the model are normally distributed.
+2. The errors are not correlated.
+3. The size of the errors does not depend on the explanatory variables.
+
+To investigate the validity of the model, it is possible to draw specific diagnostic plots about the model residuals that can be used to observe if there are any deviations from the abovementioned assumptions.
+
+### The Q–Q Plot
+```{r LM diagnostic plots Q–Q}
+plot(helsinki_lm, which = c(2))
+```
+
+The Q–Q Plot can be used to investigate, if the model errors are normally distributed. In our case, this is somewhat questionable; while most of the residuals do seem to seem to follow normal distribution, there are some clear outliers. Because there aren't very many of them, it doesn't necessarily invalidate the whole model, but it does suggest that the model is not quite as perfect as the high R<sup>2</sup> suggests.
+
+### The Residuals vs. Fitted Plot
+```{r LM diagnostic plots r vs. p}
+plot(helsinki_lm, which = c(1))
+```
+
+The Residuals vs. Fitted Plot shows, if the size of the errors depends on explanatory variables (meaning that their σ<sup>2</sup> would not be constant) and if the errors are correlated; however, because no pattern can be observed from the plot, we can safely assume that neither of these is the case.
+
+### The Residuals vs. Leverage Plot
+```{r LM diagnostic plots r vs. l}
+plot(helsinki_lm, which = c(5))
+```
+
+Even if the model matches the abovementioned assumptions, it is also recommended to check that no single observation has an outsized effect on the model, because this might distort the model coefficients. This can be done with the Residuals vs. Leverage Plot depicted above. While there are some observations that seem to have slightly outsize influence of the model, the value of the residuals of those observations remains very close to zero. Also, because the x-axis scale of the residuals vs. leverage plot remains relatively narrow, we can conclude that the model is not severely distorted by any single observation.
+
+## Conclusions and Discussion
+
+While the model validation does indicate that the model is not perfect as we would ideally like, it still demonstrates that it is usable and explains the phenomenon in question – the ratio of secondary or higher education – reasonably well. Personally, I was quite shocked and totally unprepared to find out that the support of the Finns party alone explains such a high share of the variability of the target variable; even if the model is refitted by using the Finns party support as the only explanatory variable, it still explains `r round(summary(lm(edu_sec ~ PS, data = helsinki))$r.squared*100, digits = 1)`% of the variability of the secondary or higher education ratio. None of the other explanatory variables alone explain such a high share of the target variability, with unemployment rate, income support ratio and population density having R<sup>2</sup> values of `r round(summary(lm(edu_sec ~ unemp_rate, data = helsinki))$r.squared, digits = 3)`%, `r round(summary(lm(edu_sec ~ inc_supp, data = helsinki))$r.squared, digits = 3)`% and `r round(summary(lm(edu_sec ~ pop_dens, data = helsinki))$r.squared, digits = 3)`%, respectively, if fitted as the only explanatory variables. (All of the mentioned alternative single explanatory variable models remain statistically highly significant.)
+
+What somewhat shadows the model, though, is that even though the correlation between the target variable and the income support explanatory variable is negative at `r round(cor(helsinki$inc_supp, helsinki$edu_sec), digits = 2)`, the estimate of its coefficient in the model is positive at `r round(lm_summary$coefficients[4,1], digits = 2)`. Not only this feels illogical but also, if the model is refitted with income support as the only explanatory variable, the coefficient is negative at `r round(summary(lm(edu_sec ~ inc_supp, data = helsinki))$coefficients[2,1], digits = 2)`. This situation would most likely warrant further investigation, but I personally feel that both the time constraints of this course and the limits of my skills put that out of the scope of this work; I did, however, some brief exploratins of alternate models that did not include all the explanatory variables of the final model, but the validation results of those models suggested that they violated some critical assumptions of linear models more obviously than the final model and that making predictions with them would thus be even more problematic than with the final model, so I decided to keep with the now final model.
+
+Also, there are some other phenomena potentially explained by the data, such as the reasons behind high ratio of child protection, that might warrant further research.
